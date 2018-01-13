@@ -26,35 +26,24 @@
 
 package com.github.ilmoeuro.superpd;
 
+import java.util.Arrays;
+
 import jvst.wrapper.*;
 import jvst.wrapper.valueobjects.*;
 
 public class SuperPD extends VSTPluginAdapter {
-  private static final float ENV_INC = 64;
-
   private static final int NUM_PROGRAMS = 16;
   private static final int NUM_OUTPUTS = 1;
+  private static final int NUM_VOICES = 16;
 
   private SuperPDProgram[] programs = new SuperPDProgram[NUM_PROGRAMS];
   private int channelPrograms[] = new int[NUM_PROGRAMS];
   private int currentProgram;
-
-  private boolean IsNoteOn = false;
-  private int currentNote;
+  private SuperPDVoice[] voices = new SuperPDVoice[NUM_VOICES];
 
   private float srate;
-
-  private float vco_inc_src, vco_inc, vco_inc_dest, vco_k, vco_wav;
-
-  private float vcf_envmod, vcf_envdecay, vcf_envdecayi, vcf_reso, vcf_rescoeff, vcf_cutoff, vcf_e0, vcf_e1, vcf_c0,
-      vcf_d1, vcf_d2, vcf_a, vcf_b, vcf_c, vcf_envpos;
-
-  private float vca_attack, vca_decay, vca_a0, vca_a, vca_mode, vca_accamt;
-
-  private float sld_spd;
-  private int cnt, cntmax;
-
   private float volume;
+  private float vco_wav;
 
   public SuperPD(long wrapper) {
     super(wrapper);
@@ -76,28 +65,12 @@ public class SuperPD extends VSTPluginAdapter {
     this.setUniqueID('S' << 24 | 'u' << 16 | 'P' << 8 | 'D');
 
     this.srate = 44100f;
-    this.vco_inc_dest = 440f / this.srate;
-    this.vco_inc = this.vco_inc_dest;
     this.vco_wav = 0f;
-    this.vco_k = this.vcf_cutoff = this.vcf_envmod = this.vcf_reso = 0f;
-    this.vco_inc_dest = this.vcf_envdecay = 0f;
-    this.vcf_envpos = ENV_INC;
-
-    this.vcf_a = this.vcf_b = this.vcf_d1 = this.vcf_d2 = this.vcf_c0 = this.vcf_e0 = this.vcf_e1 = 0;
-    this.vca_mode = 2;
-    this.vca_a = 0f;
-    this.vcf_rescoeff = 1f;
-    this.vca_attack = 1f - 0.94406088f;
-    this.vca_decay = 0.99897516f;
-    this.vca_a0 = 0.5f;
-    this.vca_accamt = 0.5f;
-    this.sld_spd = 0.1f;
-    this.setCutoff(0.9f);
-    this.setResonance(0.1f);
-    this.setEnvMod(1f);
-    this.setEnvDecay(0.1f);
-    this.cntmax = 1;
     this.volume = 1f;
+    
+    for (int i=0; i<NUM_VOICES; i++) {
+      voices[i] = new SuperPDVoice();
+    }
 
     this.suspend();
 
@@ -108,9 +81,9 @@ public class SuperPD extends VSTPluginAdapter {
     this.srate = s;
   }
 
+  @SuppressWarnings("deprecation")
   public void resume() {
     this.wantEvents(1); // deprecated as of vst2.4
-    // but keep it --> backward compatibility!!!
   }
 
   public void setProgram(int index) {
@@ -121,13 +94,6 @@ public class SuperPD extends VSTPluginAdapter {
     this.currentProgram = index;
 
     this.setParameter(SuperPDProgram.PARAM_ID_VOLUME, dp.getVolume());
-
-    this.setParameter(SuperPDProgram.PARAM_ID_ACC_AMOUNT, dp.getAccAmount());
-    this.setParameter(SuperPDProgram.PARAM_ID_CUT_OFF, dp.getCutoff());
-    this.setParameter(SuperPDProgram.PARAM_ID_ENV_DECAY, dp.getEnvDecay());
-    this.setParameter(SuperPDProgram.PARAM_ID_ENV_MOD, dp.getEnvMod());
-    this.setParameter(SuperPDProgram.PARAM_ID_GLIDE_SPEED, dp.getGlideSpeed());
-    this.setParameter(SuperPDProgram.PARAM_ID_RESONANCE, dp.getResonance());
     this.setParameter(SuperPDProgram.PARAM_ID_WAVEFORM, dp.getWaveform());
   }
 
@@ -154,14 +120,6 @@ public class SuperPD extends VSTPluginAdapter {
     case SuperPDProgram.PARAM_ID_WAVEFORM:
       label = "Shape";
       break;
-    case SuperPDProgram.PARAM_ID_ACC_AMOUNT:
-    case SuperPDProgram.PARAM_ID_CUT_OFF:
-    case SuperPDProgram.PARAM_ID_ENV_DECAY:
-    case SuperPDProgram.PARAM_ID_ENV_MOD:
-    case SuperPDProgram.PARAM_ID_GLIDE_SPEED:
-    case SuperPDProgram.PARAM_ID_RESONANCE:
-      label = "";
-      break;
     case SuperPDProgram.PARAM_ID_VOLUME:
       label = "dB";
       break;
@@ -174,30 +132,6 @@ public class SuperPD extends VSTPluginAdapter {
     String text = "";
 
     switch (index) {
-    case SuperPDProgram.PARAM_ID_ACC_AMOUNT: {
-      text = Float.toString(this.getAccAmt());
-      break;
-    }
-    case SuperPDProgram.PARAM_ID_CUT_OFF: {
-      text = Float.toString(this.getCutoff());
-      break;
-    }
-    case SuperPDProgram.PARAM_ID_ENV_DECAY: {
-      text = Float.toString(this.getEnvDecay());
-      break;
-    }
-    case SuperPDProgram.PARAM_ID_ENV_MOD: {
-      text = Float.toString(this.getEnvMod());
-      break;
-    }
-    case SuperPDProgram.PARAM_ID_GLIDE_SPEED: {
-      text = this.dbToString(this.getGlideSpeed());
-      break;
-    }
-    case SuperPDProgram.PARAM_ID_RESONANCE: {
-      text = this.dbToString(this.getResonance());
-      break;
-    }
     case SuperPDProgram.PARAM_ID_VOLUME: {
       text = this.dbToString(this.volume);
       break;
@@ -215,24 +149,6 @@ public class SuperPD extends VSTPluginAdapter {
     String label = "";
 
     switch (index) {
-    case SuperPDProgram.PARAM_ID_ACC_AMOUNT:
-      label = "Acc Amount";
-      break;
-    case SuperPDProgram.PARAM_ID_CUT_OFF:
-      label = "Cutoff";
-      break;
-    case SuperPDProgram.PARAM_ID_ENV_DECAY:
-      label = "Env Decay";
-      break;
-    case SuperPDProgram.PARAM_ID_ENV_MOD:
-      label = "Env Mod";
-      break;
-    case SuperPDProgram.PARAM_ID_GLIDE_SPEED:
-      label = "Glide Speed";
-      break;
-    case SuperPDProgram.PARAM_ID_RESONANCE:
-      label = "Resonance";
-      break;
     case SuperPDProgram.PARAM_ID_VOLUME:
       label = "Volume";
       break;
@@ -249,36 +165,6 @@ public class SuperPD extends VSTPluginAdapter {
     SuperPDProgram dp = this.programs[this.currentProgram];
 
     switch (index) {
-    case SuperPDProgram.PARAM_ID_ACC_AMOUNT: {
-      dp.setAccAmount(value);
-      this.setAccAmt(value);
-      break;
-    }
-    case SuperPDProgram.PARAM_ID_CUT_OFF: {
-      dp.setCutoff(value);
-      this.setCutoff(value);
-      break;
-    }
-    case SuperPDProgram.PARAM_ID_ENV_DECAY: {
-      dp.setEnvDecay(value);
-      this.setEnvDecay(value);
-      break;
-    }
-    case SuperPDProgram.PARAM_ID_ENV_MOD: {
-      dp.setEnvMod(value);
-      this.setEnvMod(value);
-      break;
-    }
-    case SuperPDProgram.PARAM_ID_GLIDE_SPEED: {
-      dp.setGlideSpeed(value);
-      this.setGlideSpeed(value);
-      break;
-    }
-    case SuperPDProgram.PARAM_ID_RESONANCE: {
-      dp.setResonance(value);
-      this.setResonance(value);
-      break;
-    }
     case SuperPDProgram.PARAM_ID_VOLUME: {
       dp.setVolume(value);
       this.volume = value;
@@ -297,24 +183,6 @@ public class SuperPD extends VSTPluginAdapter {
     float v = 0;
 
     switch (index) {
-    case SuperPDProgram.PARAM_ID_ACC_AMOUNT:
-      v = this.getAccAmt();
-      break;
-    case SuperPDProgram.PARAM_ID_CUT_OFF:
-      v = this.getCutoff();
-      break;
-    case SuperPDProgram.PARAM_ID_ENV_DECAY:
-      v = this.getEnvDecay();
-      break;
-    case SuperPDProgram.PARAM_ID_ENV_MOD:
-      v = this.getEnvMod();
-      break;
-    case SuperPDProgram.PARAM_ID_GLIDE_SPEED:
-      v = this.getGlideSpeed();
-      break;
-    case SuperPDProgram.PARAM_ID_RESONANCE:
-      v = this.getResonance();
-      break;
     case SuperPDProgram.PARAM_ID_VOLUME:
       v = this.volume;
       break;
@@ -330,7 +198,7 @@ public class SuperPD extends VSTPluginAdapter {
 
     if (index < NUM_OUTPUTS) {
       ret = new VSTPinProperties();
-      ret.setLabel("DreiNullDrei " + (index + 1) + "d");
+      ret.setLabel("SuperPD " + (index + 1) + "d");
       ret.setFlags(VSTPinProperties.VST_PIN_IS_ACTIVE);
     }
 
@@ -355,15 +223,15 @@ public class SuperPD extends VSTPluginAdapter {
   }
 
   public String getEffectName() {
-    return "DreiNullDrei v0.6";
+    return "SuperPD 0.0.1";
   }
 
   public String getVendorString() {
-    return "jVSTwRapper";
+    return "Ilmo Euro";
   }
 
   public String getProductString() {
-    return "DreiNullDrei";
+    return "SuperPD";
   }
 
   public int getNumPrograms() {
@@ -419,121 +287,40 @@ public class SuperPD extends VSTPluginAdapter {
     return false;
   }
 
-  // DEPRECATED since 2.4
-  public void process(float[][] input, float[][] output, int samples) {
-    float w, k, result;
+  private void abstractProcess(float[][] input, float[][] output, int samples, float replaceFactor) {
     float[] out1 = output[0];
 
-    if (this.IsNoteOn) {
-      for (int j = 0; j < samples; j++) {
-
-        if (this.vcf_envpos >= ENV_INC) {
-          w = this.vcf_e0 + this.vcf_c0;
-          k = (float) Math.exp(-w / this.vcf_rescoeff);
-          this.vcf_c0 = this.vcf_c0 * this.vcf_envdecay;
-          this.vcf_a = 2f * (float) Math.cos(2f * w) * k;
-          this.vcf_b = -k * k;
-          this.vcf_c = 1f - this.vcf_a - this.vcf_b;
-          this.vcf_envpos = 0;
+    for (int j = 0; j < samples; j++) {
+      float sample = 0;
+      for (SuperPDVoice voice : Arrays.asList(voices)) {
+        if (!voice.isOn()) {
+          continue;
         }
-
-        if (this.vco_wav > 0.5f) {
-          result = this.vcf_a * this.vcf_d1 + this.vcf_b * this.vcf_d2 + this.vcf_c * this.rct(this.vco_k) * this.vca_a;
+        voice.setVcoVal(voice.getVcoVal() + voice.getVcoInc());
+        while (voice.getVcoVal() > 1) {
+          voice.setVcoVal(voice.getVcoVal() - 1);
+        }
+        float phase = voice.getVcoVal();
+        float p = 0.5f + vco_wav/2f;
+        if (phase < p) {
+          phase = phase/(2*p);
         } else {
-          result = this.vcf_a * this.vcf_d1 + this.vcf_b * this.vcf_d2 + this.vcf_c * this.vco_k * this.vca_a;
+          float q = (p-0.5f)/(p-1f);
+          phase = q*(1-phase)+phase;
         }
-
-        this.vcf_d2 = this.vcf_d1;
-        this.vcf_envpos = this.vcf_envpos + 1;
-        this.vcf_d1 = result;
-
-        this.cnt++;
-        w = (float) this.cnt / (float) this.cntmax;
-
-        if (w < 1f) {
-          k = this.vco_inc_src * (1f - w) + w * this.vco_inc_dest;
-        } else {
-          this.vco_inc = this.vco_inc_dest;
-          k = this.vco_inc;
-        }
-
-        this.vco_k = this.vco_k + k;
-        if (this.vco_k > 0.5f)
-          this.vco_k -= 1;
-
-        if (this.vca_mode == 0) {
-          this.vca_a = this.vca_a + ((this.vca_a0 - this.vca_a) * this.vca_attack);
-        } else if (this.vca_mode == 1) {
-          this.vca_a = this.vca_a * this.vca_decay;
-
-          if (this.vca_a < (1f / 65536f)) {
-            this.vca_a = 0;
-            this.vca_mode = 2;
-          }
-        }
-
-        out1[j] += result * this.volume;
+        sample += (float) Math.sin(phase * 2 * Math.PI + 0.5 * Math.PI)*volume;
       }
+      out1[j] = sample + (out1[j] * (1.0f-replaceFactor));
     }
+  }
 
+  // DEPRECATED since 2.4
+  public void process(float[][] input, float[][] output, int samples) {
+    abstractProcess(input, output, samples, 0.0f);
   }
 
   public void processReplacing(float[][] input, float[][] output, int samples) {
-    float w, k, result;
-    float[] out1 = output[0];
-
-    if (this.IsNoteOn) {
-      for (int j = 0; j < samples; j++) {
-
-        if (this.vcf_envpos >= ENV_INC) {
-          w = this.vcf_e0 + this.vcf_c0;
-          k = (float) Math.exp(-w / this.vcf_rescoeff);
-          this.vcf_c0 = this.vcf_c0 * this.vcf_envdecay;
-          this.vcf_a = 2f * (float) Math.cos(2f * w) * k;
-          this.vcf_b = -k * k;
-          this.vcf_c = 1f - this.vcf_a - this.vcf_b;
-          this.vcf_envpos = 0;
-        }
-
-        if (this.vco_wav > 0.5f) {
-          result = this.vcf_a * this.vcf_d1 + this.vcf_b * this.vcf_d2 + this.vcf_c * this.rct(this.vco_k) * this.vca_a;
-        } else {
-          result = this.vcf_a * this.vcf_d1 + this.vcf_b * this.vcf_d2 + this.vcf_c * this.vco_k * this.vca_a;
-        }
-
-        this.vcf_d2 = this.vcf_d1;
-        this.vcf_envpos = this.vcf_envpos + 1;
-        this.vcf_d1 = result;
-
-        this.cnt++;
-        w = (float) this.cnt / (float) this.cntmax;
-
-        if (w < 1f) {
-          k = this.vco_inc_src * (1f - w) + w * this.vco_inc_dest;
-        } else {
-          this.vco_inc = this.vco_inc_dest;
-          k = this.vco_inc;
-        }
-
-        this.vco_k = this.vco_k + k;
-        if (this.vco_k > 0.5f)
-          this.vco_k -= 1;
-
-        if (this.vca_mode == 0) {
-          this.vca_a = this.vca_a + ((this.vca_a0 - this.vca_a) * this.vca_attack);
-        } else if (this.vca_mode == 1) {
-          this.vca_a = this.vca_a * this.vca_decay;
-
-          if (this.vca_a < (1f / 65536f)) {
-            this.vca_a = 0;
-            this.vca_mode = 2;
-          }
-        }
-
-        out1[j] = result * this.volume;
-      }
-    }
-
+    abstractProcess(input, output, samples, 1.0f);
   }
 
   public int processEvents(VSTEvents ev) {
@@ -552,14 +339,15 @@ public class SuperPD extends VSTPluginAdapter {
         if (status == 0x80)
           velocity = 0; // note off by velocity 0
 
-        if (velocity == 0 && (note == currentNote))
-          this.noteOff();
-        else
-          this.noteOn(note, velocity >= 64, false); // FIXME: do not auto glide=true!!!
+        if (velocity == 0) {
+          this.noteOff(note);
+        } else {
+          this.noteOn(note, velocity >= 64);
+        }
       } else if (status == 0xb0) {
         // all notes off
         if (midiData[1] == 0x7e || midiData[1] == 0x7b)
-          this.noteOff();
+          this.noteOffAll();
       }
     }
 
@@ -574,159 +362,76 @@ public class SuperPD extends VSTPluginAdapter {
     return this.vco_wav;
   }
 
-  private void setGlideSpeed(float s) {
-    this.sld_spd = s;
-  }
 
-  private float getGlideSpeed() {
-    return this.sld_spd;
-  }
-
-  private void setAccAmt(float a) {
-    this.vca_accamt = a;
-  }
-
-  private float getAccAmt() {
-    return this.vca_accamt;
-  }
-
-  private void setCutoff(float c) {
-    this.vcf_cutoff = c;
-    this.recalc();
-  }
-
-  private float getCutoff() {
-    return this.vcf_cutoff;
-  }
-
-  private void setResonance(float r) {
-    this.vcf_reso = r;
-    this.vcf_rescoeff = (float) Math.exp(-1.20f + 3.455f * this.vcf_reso);
-    this.recalc();
-  }
-
-  private float getResonance() {
-    return this.vcf_reso;
-  };
-
-  private void setEnvMod(float e) {
-    this.vcf_envmod = e;
-    this.recalc();
-  }
-
-  private float getEnvMod() {
-    return this.vcf_envmod;
-  }
-
-  private void setEnvDecay(float d) {
-    this.vcf_envdecayi = d;
-    this.vcf_envdecay = (0.2f + (2.3f * vcf_envdecayi)) * this.srate;
-
-    if (this.vcf_envdecay < 1)
-      this.vcf_envdecay = 1;
-
-    this.vcf_envdecay = (float) Math.pow(0.1f, 1f / (this.vcf_envdecay * ENV_INC));
-  }
-
-  private float getEnvDecay() {
-    return this.vcf_envdecayi;
-  }
-
-  private void recalc() {
-    this.vcf_e1 = (float) Math
-        .exp(6.109f + 1.5876f * this.vcf_envmod + 2.1553f * this.vcf_cutoff - 1.2f * (1.0f - this.vcf_reso));
-    this.vcf_e0 = (float) Math
-        .exp(5.613f - 0.8f * this.vcf_envmod + 2.1553f * this.vcf_cutoff - 0.7696f * (1.0f - this.vcf_reso));
-    this.vcf_e0 = this.vcf_e0 * (float) Math.PI / this.srate;
-    this.vcf_e1 = this.vcf_e1 * (float) Math.PI / this.srate;
-    this.vcf_e1 = this.vcf_e1 - this.vcf_e0;
-    this.vcf_envpos = ENV_INC;
-  }
-
-  private float rct(float x) {
-    if (x < 0f)
-      return -0.5f;
-    else
-      return 0.5f;
-  }
-
-  private void noteOn(int note, boolean acc, boolean glide) {
-    currentNote = note;
-
-    this.vco_inc_src = this.vco_inc;
-    this.vco_inc_dest = (440f / this.srate) * (float) Math.pow(2f, ((float) note - 57f) * (1f / 12f));
-
-    this.cntmax = Math.round(this.srate * this.sld_spd);
-    if (glide)
-      this.cnt = 0;
-    else
-      this.cnt = this.cntmax - 1;
-
-    this.vca_mode = 0;
-    this.vcf_c0 = this.vcf_e1;
-
-    this.vcf_envpos = ENV_INC;
-
-    if (acc)
-      this.vca_a0 = 0.5f + this.vca_accamt * 0.5f;
-    else
-      this.vca_a0 = 0.5f;
-
-    this.IsNoteOn = true;
-  }
-
-  private void noteOff() {
-    this.vca_a = 0;
-    this.vca_mode = 2;
-    this.IsNoteOn = false;
-  }
-
-  private void fillProgram(int channel, int prg, MidiProgramName mpn) {
-    if (channel == 9) {
-      // drums
-      mpn.setName("Standard");
-      mpn.setMidiProgram((byte) 0);
-      mpn.setParentCategoryIndex(0);
-    } else {
-      mpn.setName(GMNames.GM_NAMES[prg]);
-      mpn.setMidiProgram((byte) prg);
-      mpn.setParentCategoryIndex(-1); // for now
-
-      for (int i = 0; i < GMNames.NUM_GM_CATEGORIES; i++) {
-        if (prg >= GMNames.GM_CATEGORIES_FIRST_INDICES[i] && prg < GMNames.GM_CATEGORIES_FIRST_INDICES[i + 1]) {
-          mpn.setParentCategoryIndex(i);
-          break;
-        }
+  private void noteOn(int note, boolean acc) {
+    for (SuperPDVoice voice : Arrays.asList(voices)) {
+      if (!voice.isOn()) {
+        voice.setNote(note);
+        voice.setVcoInc((220f / this.srate) * (float) Math.pow(2f, ((float) note - 57f) * (1f / 12f)));
+        voice.setVcoVal(0f);
+        voice.setOn(true);
+        break;
       }
-
     }
-
   }
 
+  private void noteOff(int note) {
+    for (SuperPDVoice voice : Arrays.asList(voices)) {
+      if (voice.getNote() == note) {
+        voice.setOn(false);
+      }
+    }
+  }
+
+  private void noteOffAll() {
+    for (SuperPDVoice voice : Arrays.asList(voices)) {
+      voice.setOn(false);
+    }
+  }
+}
+
+class SuperPDVoice {
+  private float vcoInc = 0;
+  private float vcoVal = 0;
+  private boolean on;
+  private int note;
+
+  public boolean isOn() {
+    return on;
+  }
+  public void setOn(boolean on) {
+    this.on = on;
+  }
+  public int getNote() {
+    return note;
+  }
+  public void setNote(int note) {
+    this.note = note;
+  }
+  public float getVcoInc() {
+    return vcoInc;
+  }
+  public void setVcoInc(float vcoInc) {
+    this.vcoInc = vcoInc;
+  }
+  public float getVcoVal() {
+    return vcoVal;
+  }
+  public void setVcoVal(float vcoVal) {
+    this.vcoVal = vcoVal;
+  }
 }
 
 class SuperPDProgram {
   public final static int PARAM_ID_VOLUME = 0;
   public final static int PARAM_ID_WAVEFORM = 1;
-  public final static int PARAM_ID_GLIDE_SPEED = 2;
-  public final static int PARAM_ID_ACC_AMOUNT = 3;
-  public final static int PARAM_ID_CUT_OFF = 4;
-  public final static int PARAM_ID_RESONANCE = 5;
-  public final static int PARAM_ID_ENV_MOD = 6;
-  public final static int PARAM_ID_ENV_DECAY = 7;
 
-  public final static int NUM_PARAMS = PARAM_ID_ENV_DECAY + 1;
+  public final static int NUM_PARAMS = PARAM_ID_WAVEFORM + 1;
 
   private String name = "Init";
 
   private float volume = 1f;
   private float waveForm = 1;
-  private float glideSpeed = 0.1f;
-  private float accAmount = 0.5f;
-  private float cutOff = 0.9f;
-  private float reso = 0.1f;
-  private float envMod = 1f;
-  private float envDecay = 0.1f;
 
   public String getName() {
     return this.name;
@@ -751,53 +456,4 @@ class SuperPDProgram {
   public void setWaveform(float v) {
     this.waveForm = v;
   }
-
-  public float getGlideSpeed() {
-    return this.glideSpeed;
-  }
-
-  public void setGlideSpeed(float v) {
-    this.glideSpeed = v;
-  }
-
-  public float getAccAmount() {
-    return this.accAmount;
-  }
-
-  public void setAccAmount(float v) {
-    this.accAmount = v;
-  }
-
-  public float getCutoff() {
-    return this.cutOff;
-  }
-
-  public void setCutoff(float v) {
-    this.cutOff = v;
-  }
-
-  public float getResonance() {
-    return this.reso;
-  }
-
-  public void setResonance(float v) {
-    this.reso = v;
-  }
-
-  public float getEnvMod() {
-    return this.envMod;
-  }
-
-  public void setEnvMod(float v) {
-    this.envMod = v;
-  }
-
-  public float getEnvDecay() {
-    return this.envDecay;
-  }
-
-  public void setEnvDecay(float v) {
-    this.envDecay = v;
-  }
-
 }
