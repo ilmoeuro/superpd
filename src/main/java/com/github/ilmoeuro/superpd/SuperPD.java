@@ -19,6 +19,7 @@ public class SuperPD extends VSTPluginAdapter {
   private float volume;
   private float waveformX;
   private float waveformY;
+  private float mirror;
   private float shift;
 
   @SuppressWarnings("null")
@@ -116,6 +117,9 @@ public class SuperPD extends VSTPluginAdapter {
     case SuperPDProgram.PARAM_ID_WAVEFORM_Y: 
       text = Float.toString(this.waveformY);
       break;
+    case SuperPDProgram.PARAM_ID_MIRROR: 
+      text = this.mirror < 0.5 ? "not mirrored" : "mirrored";
+      break;
     case SuperPDProgram.PARAM_ID_SHIFT: 
       text = Float.toString(this.shift);
       break;
@@ -165,6 +169,10 @@ public class SuperPD extends VSTPluginAdapter {
       dp.setWaveformY(value);
       this.waveformY = value;
       break;
+    case SuperPDProgram.PARAM_ID_MIRROR:
+      dp.setMirror(value);
+      this.mirror = value;
+      break;
     case SuperPDProgram.PARAM_ID_SHIFT:
       dp.setShift(value);
       this.shift = value;
@@ -187,6 +195,9 @@ public class SuperPD extends VSTPluginAdapter {
       break;
     case SuperPDProgram.PARAM_ID_WAVEFORM_Y:
       v = this.waveformY;
+      break;
+    case SuperPDProgram.PARAM_ID_MIRROR:
+      v = this.mirror;
       break;
     case SuperPDProgram.PARAM_ID_SHIFT:
       v = this.shift;
@@ -301,17 +312,32 @@ public class SuperPD extends VSTPluginAdapter {
         while (voice.getVcoVal() > 1) {
           voice.setVcoVal(voice.getVcoVal() - 1);
         }
+        float x = waveformX;
+        float y = waveformY;
         float phase = voice.getVcoVal();
-        if (phase < waveformX) {
-          float k = waveformX == 0f ? 0 : waveformY/waveformX;
-          phase = k*phase;
-        } else {
-          float q = (waveformX-waveformY)/(waveformX-1f);
-          phase = q*(1-phase)+phase;
-        }
+        phase = phaseDistort(x, y, phase, mirror > 0.5);
         sample += (float) Math.sin(phase * 2 * Math.PI + shift * Math.PI)*volume;
       }
       out1[j] = sample + (out1[j] * (1.0f-replaceFactor));
+    }
+  }
+
+  private float phaseDistort(float x, float y, float phase, boolean mirror) {
+    if (mirror) {
+      if (phase < 0.5f) {
+        return phaseDistort(x, y, phase*2f, false)/2f;
+      } else {
+        return 0.5f + phaseDistort(x, y, phase*2f - 1f, false)/2f;
+      }
+    } else {
+      if (phase < x) {
+        float k = x == 0f ? 0 : y/x;
+        phase = k*phase;
+      } else {
+        float q = (x-y)/(x-1f);
+        phase = q*(1-phase)+phase;
+      }
+      return phase;
     }
   }
 
@@ -418,7 +444,8 @@ class SuperPDProgram {
   public final static int PARAM_ID_VOLUME = 0;
   public final static int PARAM_ID_WAVEFORM_X = 1;
   public final static int PARAM_ID_WAVEFORM_Y = 2;
-  public final static int PARAM_ID_SHIFT = 3;
+  public final static int PARAM_ID_MIRROR = 3;
+  public final static int PARAM_ID_SHIFT = 4;
 
   public final static int NUM_PARAMS = PARAM_ID_SHIFT + 1;
 
@@ -427,6 +454,7 @@ class SuperPDProgram {
   private float volume = 1f;
   private float waveformX = 0f;
   private float waveformY = 0f;
+  private float mirror = 0f;
   private float shift = 0f;
 
   public String getName() {
@@ -459,6 +487,14 @@ class SuperPDProgram {
 
   public void setWaveformY(float waveformY) {
     this.waveformY = waveformY;
+  }
+
+  public float getMirror() {
+    return mirror;
+  }
+
+  public void setMirror(float mirror) {
+    this.mirror = mirror;
   }
 
   public float getShift() {
