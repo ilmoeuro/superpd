@@ -1,29 +1,3 @@
-/* 
- * jVSTwRapper - The Java way into VST world!
- * 
- * jVSTwRapper is an easy and reliable Java Wrapper for the Steinberg VST interface. 
- * It enables you to develop VST 2.3 compatible audio plugins and virtual instruments 
- * plus user interfaces with the Java Programming Language. 3 Demo Plugins(+src) are included!
- * 
- * Copyright (C) 2006  Daniel Martin [daniel309@users.sourceforge.net] 
- * 					   and many others, see CREDITS.txt
- *
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
- */
-
 package com.github.ilmoeuro.superpd;
 
 import java.util.Arrays;
@@ -43,11 +17,13 @@ public class SuperPD extends VSTPluginAdapter {
 
   private float srate;
   private float volume;
-  private float vco_wav;
+  private float waveformX;
+  private float waveformY;
+  private float shift;
 
+  @SuppressWarnings("null")
   public SuperPD(long wrapper) {
     super(wrapper);
-    log(getClass().getSimpleName() + " constructor starting");
 
     for (int i = 0; i < this.programs.length; i++)
       this.programs[i] = new SuperPDProgram();
@@ -56,25 +32,23 @@ public class SuperPD extends VSTPluginAdapter {
 
     this.setProgram(0);
 
-    this.setNumInputs(0);// no input
-    this.setNumOutputs(NUM_OUTPUTS);// mono output
+    this.setNumInputs(0);
+    this.setNumOutputs(NUM_OUTPUTS);
     this.canProcessReplacing(true);
-
     this.isSynth(true);
-
     this.setUniqueID('S' << 24 | 'u' << 16 | 'P' << 8 | 'D');
 
     this.srate = 44100f;
-    this.vco_wav = 0f;
+    this.waveformX = 0f;
+    this.waveformY = 0f;
     this.volume = 1f;
+    this.shift = 0f;
     
     for (int i=0; i<NUM_VOICES; i++) {
       voices[i] = new SuperPDVoice();
     }
 
     this.suspend();
-
-    log(getClass().getSimpleName() + " constructor finished");
   }
 
   public void setSampleRate(float s) {
@@ -94,7 +68,9 @@ public class SuperPD extends VSTPluginAdapter {
     this.currentProgram = index;
 
     this.setParameter(SuperPDProgram.PARAM_ID_VOLUME, dp.getVolume());
-    this.setParameter(SuperPDProgram.PARAM_ID_WAVEFORM, dp.getWaveform());
+    this.setParameter(SuperPDProgram.PARAM_ID_WAVEFORM_X, dp.getWaveformX());
+    this.setParameter(SuperPDProgram.PARAM_ID_WAVEFORM_Y, dp.getWaveformY());
+    this.setParameter(SuperPDProgram.PARAM_ID_SHIFT, dp.getShift());
   }
 
   public void setProgramName(String name) {
@@ -117,11 +93,10 @@ public class SuperPD extends VSTPluginAdapter {
     String label = "";
 
     switch (index) {
-    case SuperPDProgram.PARAM_ID_WAVEFORM:
-      label = "Shape";
-      break;
     case SuperPDProgram.PARAM_ID_VOLUME:
       label = "dB";
+      break;
+    default:
       break;
     }
 
@@ -132,14 +107,20 @@ public class SuperPD extends VSTPluginAdapter {
     String text = "";
 
     switch (index) {
-    case SuperPDProgram.PARAM_ID_VOLUME: {
+    case SuperPDProgram.PARAM_ID_VOLUME: 
       text = this.dbToString(this.volume);
       break;
-    }
-    case SuperPDProgram.PARAM_ID_WAVEFORM: {
-      text = Float.toString(this.getWaveform());
+    case SuperPDProgram.PARAM_ID_WAVEFORM_X: 
+      text = Float.toString(this.waveformX);
       break;
-    }
+    case SuperPDProgram.PARAM_ID_WAVEFORM_Y: 
+      text = Float.toString(this.waveformY);
+      break;
+    case SuperPDProgram.PARAM_ID_SHIFT: 
+      text = Float.toString(this.shift);
+      break;
+    default:
+      break;
     }
 
     return text;
@@ -152,10 +133,17 @@ public class SuperPD extends VSTPluginAdapter {
     case SuperPDProgram.PARAM_ID_VOLUME:
       label = "Volume";
       break;
-    case SuperPDProgram.PARAM_ID_WAVEFORM:
-      label = "Waveform";
+    case SuperPDProgram.PARAM_ID_WAVEFORM_X:
+      label = "Waveform X";
       break;
-
+    case SuperPDProgram.PARAM_ID_WAVEFORM_Y:
+      label = "Waveform Y";
+      break;
+    case SuperPDProgram.PARAM_ID_SHIFT:
+      label = "Shift";
+      break;
+    default:
+      break;
     }
 
     return label;
@@ -165,16 +153,24 @@ public class SuperPD extends VSTPluginAdapter {
     SuperPDProgram dp = this.programs[this.currentProgram];
 
     switch (index) {
-    case SuperPDProgram.PARAM_ID_VOLUME: {
+    case SuperPDProgram.PARAM_ID_VOLUME:
       dp.setVolume(value);
       this.volume = value;
       break;
-    }
-    case SuperPDProgram.PARAM_ID_WAVEFORM: {
-      dp.setWaveform(value);
-      this.setWaveform(value);
+    case SuperPDProgram.PARAM_ID_WAVEFORM_X:
+      dp.setWaveformX(value);
+      this.waveformX = value;
       break;
-    }
+    case SuperPDProgram.PARAM_ID_WAVEFORM_Y:
+      dp.setWaveformY(value);
+      this.waveformY = value;
+      break;
+    case SuperPDProgram.PARAM_ID_SHIFT:
+      dp.setShift(value);
+      this.shift = value;
+      break;
+    default:
+      break;
     }
 
   }
@@ -186,13 +182,22 @@ public class SuperPD extends VSTPluginAdapter {
     case SuperPDProgram.PARAM_ID_VOLUME:
       v = this.volume;
       break;
-    case SuperPDProgram.PARAM_ID_WAVEFORM:
-      v = this.getWaveform();
+    case SuperPDProgram.PARAM_ID_WAVEFORM_X:
+      v = this.waveformX;
+      break;
+    case SuperPDProgram.PARAM_ID_WAVEFORM_Y:
+      v = this.waveformY;
+      break;
+    case SuperPDProgram.PARAM_ID_SHIFT:
+      v = this.shift;
+      break;
+    default:
       break;
     }
     return v;
   }
 
+  @SuppressWarnings("null")
   public VSTPinProperties getOutputProperties(int index) {
     VSTPinProperties ret = null;
 
@@ -279,10 +284,6 @@ public class SuperPD extends VSTPluginAdapter {
     return ret;
   }
 
-  // struct will be filled with information for 'thisProgramIndex' and
-  // 'thisKeyNumber'
-  // if keyName is "" the standard name of the key will be displayed.
-  // if false is returned, no MidiKeyNames defined for 'thisProgramIndex'.
   public boolean getMidiKeyName(long channel, MidiKeyName key) {
     return false;
   }
@@ -301,14 +302,14 @@ public class SuperPD extends VSTPluginAdapter {
           voice.setVcoVal(voice.getVcoVal() - 1);
         }
         float phase = voice.getVcoVal();
-        float p = 0.5f + vco_wav/2f;
-        if (phase < p) {
-          phase = phase/(2*p);
+        if (phase < waveformX) {
+          float k = waveformX == 0f ? 0 : waveformY/waveformX;
+          phase = k*phase;
         } else {
-          float q = (p-0.5f)/(p-1f);
+          float q = (waveformX-waveformY)/(waveformX-1f);
           phase = q*(1-phase)+phase;
         }
-        sample += (float) Math.sin(phase * 2 * Math.PI + 0.5 * Math.PI)*volume;
+        sample += (float) Math.sin(phase * 2 * Math.PI + shift * Math.PI)*volume;
       }
       out1[j] = sample + (out1[j] * (1.0f-replaceFactor));
     }
@@ -353,15 +354,6 @@ public class SuperPD extends VSTPluginAdapter {
 
     return 1; // want more
   }
-
-  private void setWaveform(float w) {
-    this.vco_wav = w;
-  }
-
-  private float getWaveform() {
-    return this.vco_wav;
-  }
-
 
   private void noteOn(int note, boolean acc) {
     for (SuperPDVoice voice : Arrays.asList(voices)) {
@@ -424,14 +416,18 @@ class SuperPDVoice {
 
 class SuperPDProgram {
   public final static int PARAM_ID_VOLUME = 0;
-  public final static int PARAM_ID_WAVEFORM = 1;
+  public final static int PARAM_ID_WAVEFORM_X = 1;
+  public final static int PARAM_ID_WAVEFORM_Y = 2;
+  public final static int PARAM_ID_SHIFT = 3;
 
-  public final static int NUM_PARAMS = PARAM_ID_WAVEFORM + 1;
+  public final static int NUM_PARAMS = PARAM_ID_SHIFT + 1;
 
   private String name = "Init";
 
   private float volume = 1f;
-  private float waveForm = 1;
+  private float waveformX = 0f;
+  private float waveformY = 0f;
+  private float shift = 0f;
 
   public String getName() {
     return this.name;
@@ -449,11 +445,27 @@ class SuperPDProgram {
     this.volume = v;
   }
 
-  public float getWaveform() {
-    return this.waveForm;
+  public float getWaveformX() {
+    return waveformX;
   }
 
-  public void setWaveform(float v) {
-    this.waveForm = v;
+  public void setWaveformX(float waveformX) {
+    this.waveformX = waveformX;
+  }
+
+  public float getWaveformY() {
+    return waveformY;
+  }
+
+  public void setWaveformY(float waveformY) {
+    this.waveformY = waveformY;
+  }
+
+  public float getShift() {
+    return shift;
+  }
+
+  public void setShift(float shift) {
+    this.shift = shift;
   }
 }
